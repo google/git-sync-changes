@@ -41,32 +41,30 @@ fi
 check_remote "${remote}" || exit 0
 
 local_sync_ref() {
-  user="${1:-$(current_user)}"
-  branch="${2:-$(current_branch)}"
   echo "refs/sync/${user}/${branch}"
 }
 
 remote_sync_ref() {
-  remote="${1:-origin}"
-  user="${2:-$(current_user)}"
-  branch="${3:-$(current_branch)}"
   echo "refs/sync_remotes/${remote}/${user}/$(current_branch)"
 }
 
 fetch_remote_changes() {
-  remote="${1:-origin}"
-  user="${2:-$(current_user)}"
-  branch="${3:-$(current_branch)}"
-  local_ref="$(local_sync_ref ${user} ${branch})"
-  remote_ref="$(remote_sync_ref ${remote} ${user} ${branch})"
+  local_ref="$(local_sync_ref)"
+  remote_ref="$(remote_sync_ref)"
 
   git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || return 0
-
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
+  remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
+  if [ "${local_commit}" == "${remote_commit}" ]; then
+    # Everything is already in sync.
+    return 1
+  fi
+
   merge_base="$(git merge-base ${local_ref} ${remote_ref})"
-  if [ "${local_commit}" == "${merge_base}" ]; then
-    # We have already merged in the remote ref, so there is nothing left to do
-    return 1;
+  if [ "${remote_commit}" == "${merge_base}" ]; then
+    # The remote changes have already been included in our local changes.
+    # All that is left is for us to potentially push the local changes.
+    return 0
   fi
 
   # Create a temporary directory in which to perform the merge
@@ -83,7 +81,7 @@ fetch_remote_changes() {
   tempbranch="$(current_branch)"
   git update-ref "${local_ref}" "${tempbranch}" 2>/dev/null >&2
 
-  # Copy an remote changes to our working dir
+  # Copy any remote changes to our working dir
   find -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'mkdir' '-p' "${maindir}/{}" ';'
   find -not -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'cp' '{}' "${maindir}/"'{}' ';'
 
@@ -96,11 +94,7 @@ fetch_remote_changes() {
 }
 
 push_local_changes() {
-  remote="${1:-origin}"
-  user="${2:-$(current_user)}"
-  branch="${3:-$(current_branch)}"
-  local_ref="$(local_sync_ref ${user} ${branch})"
-
+  local_ref="$(local_sync_ref)"
   git push "${remote}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
 }
 
@@ -111,10 +105,7 @@ push_local_changes() {
 #
 # The resulting commit is stored in refs/sync/${user}/${branch}
 stash_changes() {
-  user="${1:-$(current_user)}"
-  branch="${2:-$(current_branch)}"
-  local_ref="$(local_sync_ref ${user} ${branch})"
-
+  local_ref="$(local_sync_ref)"
   changes_stash=$(git stash create "Save local changes")
   if [ -z "${changes_stash}" ]; then
     # We have no changes since the last commit, so clear out the undo buffer ref
@@ -139,6 +130,6 @@ stash_changes() {
   git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
 }
 
-stash_changes "${user}" "${branch}"
-fetch_remote_changes "${remote}" "${user}" "${branch}" || exit 0
-push_local_changes "${remote}" "${user}" "${branch}"
+stash_changes
+fetch_remote_changes || exit 0
+push_local_changes
