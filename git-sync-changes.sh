@@ -97,6 +97,14 @@ push_local_changes() {
   local_ref="$(local_sync_ref)"
   remote_ref="$(remote_sync_ref)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
+
+  if [ -z "$(git diff ${local_ref} ${branch})" ] && [ -z "$(git diff ${remote_commit} ${branch})" ]; then
+    # We have no changes against the branch, either locally or remotely.
+    #
+    # Clean up by reseting the change history.
+    git update-ref "${local_ref}" "${branch}"
+  fi
+
   git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
 }
 
