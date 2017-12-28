@@ -118,7 +118,7 @@ stash_changes() {
   changes_stash=$(git stash create "Save local changes")
   if [ -z "${changes_stash}" ]; then
     # We have no changes since the last commit, so clear out the undo buffer ref
-    git update-ref "${local_ref}" "$(branch)" 2>/dev/null >&2
+    git update-ref "${local_ref}" "${branch}" 2>/dev/null >&2
     return 0
   fi
 
