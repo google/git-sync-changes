@@ -54,10 +54,12 @@ read_remote_branch() {
 
 # Merge saved changes from the remote to our local changes.
 #
-# This method enforces the following constraints:
-# 1. Changes are only synced if the local and remote branches match.
-# 2. Changes are only synced if they were made after the current branch.
-# 3. Any given change is not synced more than once.
+# This method enforces the following constraints; after the method returns.
+# 1. The commit at refs/sync/${user}/${branch} (if it exists) contains all
+#    changes that were made either locally or remotely after the branch was
+#    changed to its current value.
+# 2. The local client's files (except for ignored files) match the tree
+#    in the commit at refs/sync/${user}/${branch} (if it exists).
 fetch_remote_changes() {
   remote_branch="$(read_remote_branch)"
   if [ "${remote_branch}" != "$(current_head)" ]; then
@@ -72,10 +74,26 @@ fetch_remote_changes() {
   git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || return 0
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
+
+  if [ -z "${remote_commit}" ]; then
+    # There is nothing to sync
+    return 0
+  fi
+
   git merge-base --is-ancestor "${branch}" "${remote_commit}" 2>/dev/null >&2
   if [ "$?" != "0" ]; then
     # The remote changes are out of date, so do not pull them down.
     # (But still allow our local, up to date changes to be pushed back)
+    return 0
+  fi
+
+  if [ -z "${local_commit}" ]; then
+    # We have no local modifications, so copy the remote ones as-is
+    git update-ref "${local_ref}" "${remote_commit}" 2>/dev/null >&2
+    diff="$(git diff ${remote_commit})"
+    if [ -n "${diff}" ]; then
+      echo "${diff}" | git apply --reverse --
+    fi
     return 0
   fi
 
@@ -84,11 +102,13 @@ fetch_remote_changes() {
     return 1
   fi
 
-  merge_base="$(git merge-base ${local_ref} ${remote_ref})"
-  if [ "${remote_commit}" == "${merge_base}" ]; then
-    # The remote changes have already been included in our local changes.
-    # All that is left is for us to potentially push the local changes.
-    return 0
+  if [ -n "${local_commit}" ]; then
+    merge_base="$(git merge-base ${local_ref} ${remote_ref})"
+    if [ "${remote_commit}" == "${merge_base}" ]; then
+      # The remote changes have already been included in our local changes.
+      # All that is left is for us to potentially push the local changes.
+      return 0
+    fi
   fi
 
   # Create a temporary directory in which to perform the merge
@@ -99,7 +119,9 @@ fetch_remote_changes() {
 
   # Perform the merge, favoring our changes in the case of conflicts, and
   # update the local ref.
-  git merge --ff "${local_ref}" 2>/dev/null >&2
+  if [ -n "${local_commit}" ]; then
+    git merge --ff "${local_ref}" 2>/dev/null >&2
+  fi
   git merge -s recursive -X ours "${remote_ref}" 2>/dev/null >&2
   git commit -a -m "Merge remote changes" 2>/dev/null >&2
   tempbranch="$(current_branch)"
