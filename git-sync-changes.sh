@@ -165,9 +165,9 @@ push_local_changes() {
 # 1. The contents of the local client's files (other than ignored files)
 #    matches the tree of the commit stored at refs/sync/${user}/${branch}
 # 2. The history of the commit stored at refs/sync/${user}/${branch}
-#    (if it exists) includes every change that was stashed since ${branch}
+#    (if it exists) includes every change that was saved since ${branch}
 #    was changed to its current value.
-stash_changes() {
+save_changes() {
   local_ref="$(local_sync_ref)"
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   if [ -n "${local_commit}" ]; then
@@ -205,6 +205,6 @@ stash_changes() {
   git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
 }
 
-stash_changes
+save_changes
 fetch_remote_changes || exit 0
 push_local_changes
