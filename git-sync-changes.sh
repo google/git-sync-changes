@@ -17,7 +17,7 @@ current_branch() {
 }
 
 current_head() {
-  git show-ref $(current_branch) | cut -d ' ' -f 1
+  git show-ref --heads $(current_branch) | cut -d ' ' -f 1
 }
 
 current_user() {
@@ -52,7 +52,7 @@ fetch_remote_changes() {
 
   git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || return 0
 
-  local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 2)"
+  local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   merge_base="$(git merge-base ${local_ref} ${remote_ref})"
   if [ "${local_commit}" == "${merge_base}" ]; then
     # We have already merged in the remote ref, so there is nothing left to do
@@ -94,31 +94,28 @@ push_local_changes() {
   git push "${remote}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
 }
 
+# Create an undo-buffer-like commit of the local changes.
+#
+# This differs from `git stash` in that multiple changes can
+# be chained together.
+#
+# The resulting commit is stored in refs/sync/${user}/${branch}
 stash_changes() {
+  changes_stash=$(git stash create "Save local changes")
+
   user="${1:-$(current_user)}"
   branch="${2:-$(current_branch)}"
   local_ref="$(local_sync_ref ${user} ${branch})"
-  changes_stash=$(git stash create "Save local changes")
+  local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
+  if [ -z "${local_commit}" ]; then
+    # We have no previously saved changes, so we can just use the stash
+    git update-ref "${local_ref}" "${changes_stash}" 2>/dev/null >&2
+    return 0
+  fi
 
-  # Create a temporary directory in which to create the changes commit
-  maindir=$(pwd)
-  tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
-  git worktree add "${tempdir}" 2>/dev/null >&2
-  cd "${tempdir}"
-  git merge -s recursive -X theirs "${local_ref}" 2>/dev/null >&2 || true
-
-  # Create the changes commit and update the corresponding ref
-  git stash apply "${changes_stash}" 2>/dev/null >&2
-  git add ./ 2>/dev/null >&2
-  git commit -a -m "Save local changes" 2>/dev/null >&2
-  git update-ref "${local_ref}" "$(current_head)" 2>/dev/null >&2
-  tempbranch="$(current_branch)"
-
-  # Cleanup the temporary directory and branch that we used
-  cd "${maindir}"
-  rm -rf "${tempdir}"
-  git update-ref -d "${tempbranch}"
-  git worktree prune
+  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
+  changes_commit=$(git commit-tree -p "$(current_head)" -p "${local_commit}" -m "Save local changes" "${changes_tree}")
+  git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
 }
 
 remote="${1:-origin}"
@@ -129,8 +126,8 @@ if [ -z "$(current_head)" ]; then
   echo "Empty repository; nothing to do" >&2
   exit 0
 fi
-check_remote "${remote}" || return 0
+check_remote "${remote}" || exit 0
 
 stash_changes "${user}" "${branch}"
-fetch_remote_changes "${remote}" "${user}" "${branch}" || return 0
+fetch_remote_changes "${remote}" "${user}" "${branch}" || exit 0
 push_local_changes "${remote}" "${user}" "${branch}"
