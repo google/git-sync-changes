@@ -73,7 +73,7 @@ fetch_remote_changes() {
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
   git merge-base --is-ancestor "${branch}" "${remote_commit}" 2>/dev/null >&2
-  if [ ! "$?" ]; then
+  if [ "$?" != "0" ]; then
     # The remote changes are out of date, so do not pull them down.
     # (But still allow our local, up to date changes to be pushed back)
     return 0
@@ -150,7 +150,7 @@ stash_changes() {
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   if [ -n "${local_commit}" ]; then
     git merge-base --is-ancestor "${branch}" "${local_ref}" 2>/dev/null >&2
-    if [ ! "$?" ]; then
+    if [ "$?" != "0" ]; then
       # The local branch has been updated since our last save. We need
       # to clear out the (now obsolete) saved changes.
       git update-ref -d "${local_ref}"
