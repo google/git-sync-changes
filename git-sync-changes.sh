@@ -95,7 +95,9 @@ fetch_remote_changes() {
 
 push_local_changes() {
   local_ref="$(local_sync_ref)"
-  git push "${remote}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
+  remote_ref="$(remote_sync_ref)"
+  remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
+  git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
 }
 
 # Create an undo-buffer-like commit of the local changes.
