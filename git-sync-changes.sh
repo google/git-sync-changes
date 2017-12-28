@@ -48,13 +48,37 @@ remote_sync_ref() {
   echo "refs/sync_remotes/${remote}/${user}/$(current_branch)"
 }
 
+read_remote_branch() {
+  git ls-remote --heads ${remote} ${branch} | cut -d $'\t' -f 1
+}
+
+# Merge saved changes from the remote to our local changes.
+#
+# This method enforces the following constraints:
+# 1. Changes are only synced if the local and remote branches match.
+# 2. Changes are only synced if they were made after the current branch.
+# 3. Any given change is not synced more than once.
 fetch_remote_changes() {
+  remote_branch="$(read_remote_branch)"
+  if [ "${remote_branch}" != "$(current_head)" ]; then
+    # Our branch is not in sync with the remote,
+    # so do not try to sync the change histories.
+    return 1
+  fi
+  
   local_ref="$(local_sync_ref)"
   remote_ref="$(remote_sync_ref)"
 
   git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || return 0
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
+  git merge-base --is-ancestor "${branch}" "${remote_commit}" 2>/dev/null >&2
+  if [ ! "$?" ]; then
+    # The remote changes are out of date, so do not pull them down.
+    # (But still allow our local, up to date changes to be pushed back)
+    return 0
+  fi
+
   if [ "${local_commit}" == "${remote_commit}" ]; then
     # Everything is already in sync.
     return 1
@@ -102,7 +126,7 @@ push_local_changes() {
     # We have no changes against the branch, either locally or remotely.
     #
     # Clean up by reseting the change history.
-    git update-ref "${local_ref}" "${branch}"
+    git update-ref "${local_ref}" "${branch}" 2>/dev/null >&2
   fi
 
   git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
@@ -114,9 +138,26 @@ push_local_changes() {
 # be chained together.
 #
 # The resulting commit is stored in refs/sync/${user}/${branch}
+#
+# This method enforces two constraints; after the method returns:
+# 1. The contents of the local client's files (other than ignored files)
+#    matches the tree of the commit stored at refs/sync/${user}/${branch}
+# 2. The history of the commit stored at refs/sync/${user}/${branch}
+#    (if it exists) includes every change that was stashed since ${branch}
+#    was changed to its current value.
 stash_changes() {
   local_ref="$(local_sync_ref)"
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
+  if [ -n "${local_commit}" ]; then
+    git merge-base --is-ancestor "${branch}" "${local_ref}" 2>/dev/null >&2
+    if [ ! "$?" ]; then
+      # The local branch has been updated since our last save. We need
+      # to clear out the (now obsolete) saved changes.
+      git update-ref -d "${local_ref}"
+      local_commit=""
+    fi
+  fi
+
   local_diff="$(git diff ${branch})"
   if [ -z "${local_commit}" ] && [ -z "${local_diff}" ]; then
     # We have neither local modifications nor previously saved changes
