@@ -108,26 +108,28 @@ push_local_changes() {
 # The resulting commit is stored in refs/sync/${user}/${branch}
 stash_changes() {
   local_ref="$(local_sync_ref)"
-  changes_stash=$(git stash create "Save local changes")
-  if [ -z "${changes_stash}" ]; then
-    # We have no changes since the last commit, so clear out the undo buffer ref
-    git update-ref "${local_ref}" "${branch}" 2>/dev/null >&2
+  local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
+  local_diff="$(git diff ${branch})"
+  if [ -z "${local_commit}" ] && [ -z "${local_diff}" ]; then
+    # We have neither local modifications nor previously saved changes
     return 0
   fi
-
-  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
-  local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   if [ -z "${local_commit}" ]; then
-    # We have no previously saved changes, so we can just use the stash
+    # We do not have previously saved changes, so just take a stash
+    # and save it.
+    changes_stash=$(git stash create "Save local changes")
     git update-ref "${local_ref}" "${changes_stash}" 2>/dev/null >&2
     return 0
   fi
-  previous_changes_tree=$(git cat-file -p "${local_commit}" | head -n 1 | cut -d ' ' -f 2)
-  if [ "${changes_tree}" == "${previous_changes_tree}" ]; then
-    # We have no changes since the previous undo save
+
+  new_changes="$(git diff ${local_commit})"
+  if [ -z "${new_changes}" ]; then
+    # We have no changes since the last time we saved.
     return 0
   fi
 
+  changes_stash=$(git stash create "Save local changes")
+  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
   changes_commit=$(git commit-tree -p "$(current_head)" -p "${local_commit}" -m "Save local changes" "${changes_tree}")
   git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
 }
