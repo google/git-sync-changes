@@ -98,6 +98,7 @@ stash_changes() {
   user="${1:-$(current_user)}"
   branch="${2:-$(current_branch)}"
   local_ref="$(local_sync_ref ${user} ${branch})"
+  changes_stash=$(git stash create "Save local changes")
 
   # Create a temporary directory in which to create the changes commit
   maindir=$(pwd)
@@ -106,13 +107,8 @@ stash_changes() {
   cd "${tempdir}"
   git merge -s recursive -X theirs "${local_ref}" 2>/dev/null >&2 || true
 
-  # Copy the local changes to that temp directory
-  cd "${maindir}"
-  find -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'mkdir' '-p' "${tempdir}/{}" ';'
-  find -not -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'cp' '{}' "${tempdir}/"'{}' ';'
-
   # Create the changes commit and update the corresponding ref
-  cd "${tempdir}"
+  git stash apply "${changes_stash}" 2>/dev/null >&2
   git add ./ 2>/dev/null >&2
   git commit -a -m "Save local changes" 2>/dev/null >&2
   git update-ref "${local_ref}" "$(current_head)" 2>/dev/null >&2
