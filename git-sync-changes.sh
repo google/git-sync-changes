@@ -25,6 +25,21 @@ current_user() {
   echo "${user_email:-${USER}}"
 }
 
+check_remote() {
+  git remote get-url origin 2>/dev/null >&2 && return 0
+  echo "Remote ${remote} does not exist... nothing to sync" >&2 ; return 1
+}
+
+remote="${1:-origin}"
+user="${2:-$(current_user)}"
+branch="${3:-$(current_branch)}"
+
+if [ -z "$(current_head)" ]; then
+  echo "Empty repository; nothing to do" >&2
+  exit 0
+fi
+check_remote "${remote}" || exit 0
+
 local_sync_ref() {
   user="${1:-$(current_user)}"
   branch="${2:-$(current_branch)}"
@@ -36,11 +51,6 @@ remote_sync_ref() {
   user="${2:-$(current_user)}"
   branch="${3:-$(current_branch)}"
   echo "refs/sync_remotes/${remote}/${user}/$(current_branch)"
-}
-
-check_remote() {
-  git remote get-url origin 2>/dev/null >&2 && return 0
-  echo "Remote ${remote} does not exist... nothing to sync" >&2 ; return 1
 }
 
 fetch_remote_changes() {
@@ -101,32 +111,33 @@ push_local_changes() {
 #
 # The resulting commit is stored in refs/sync/${user}/${branch}
 stash_changes() {
-  changes_stash=$(git stash create "Save local changes")
-
   user="${1:-$(current_user)}"
   branch="${2:-$(current_branch)}"
   local_ref="$(local_sync_ref ${user} ${branch})"
+
+  changes_stash=$(git stash create "Save local changes")
+  if [ -z "${changes_stash}" ]; then
+    # We have no changes since the last commit, so clear out the undo buffer ref
+    git update-ref "${local_ref}" "$(branch)" 2>/dev/null >&2
+    return 0
+  fi
+
+  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   if [ -z "${local_commit}" ]; then
     # We have no previously saved changes, so we can just use the stash
     git update-ref "${local_ref}" "${changes_stash}" 2>/dev/null >&2
     return 0
   fi
+  previous_changes_tree=$(git cat-file -p "${local_commit}" | head -n 1 | cut -d ' ' -f 2)
+  if [ "${changes_tree}" == "${previous_changes_tree}" ]; then
+    # We have no changes since the previous undo save
+    return 0
+  fi
 
-  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
   changes_commit=$(git commit-tree -p "$(current_head)" -p "${local_commit}" -m "Save local changes" "${changes_tree}")
   git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
 }
-
-remote="${1:-origin}"
-user="${2:-$(current_user)}"
-branch="${3:-$(current_branch)}"
-
-if [ -z "$(current_head)" ]; then
-  echo "Empty repository; nothing to do" >&2
-  exit 0
-fi
-check_remote "${remote}" || exit 0
 
 stash_changes "${user}" "${branch}"
 fetch_remote_changes "${remote}" "${user}" "${branch}" || exit 0
