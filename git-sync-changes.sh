@@ -90,9 +90,9 @@ fetch_remote_changes() {
   if [ -z "${local_commit}" ]; then
     # We have no local modifications, so copy the remote ones as-is
     git update-ref "${local_ref}" "${remote_commit}" 2>/dev/null >&2
-    diff="$(git diff ${remote_commit})"
+    diff="$(git diff ${branch}..${remote_commit})"
     if [ -n "${diff}" ]; then
-      echo "${diff}" | git apply --reverse --
+      echo "${diff}" | git apply --
     fi
     return 1
   fi
@@ -134,7 +134,7 @@ fetch_remote_changes() {
   git worktree prune
 
   # Copy any remote changes to our working dir
-  diff="$(git diff ${local_ref})"
+  diff="$(git diff ${local_ref} -- ./)"
   if [ -n "${diff}" ]; then
     echo "${diff}" | git apply --reverse --
   fi
@@ -183,7 +183,7 @@ save_changes() {
     fi
   fi
 
-  local_diff="$(git diff ${branch})"
+  local_diff="$(git diff ${branch} -- ./)"
   if [ -z "${local_commit}" ] && [ -z "${local_diff}" ]; then
     # We have neither local modifications nor previously saved changes
     return 0
@@ -196,7 +196,7 @@ save_changes() {
     return 0
   fi
 
-  new_changes="$(git diff ${local_commit})"
+  new_changes="$(git diff ${local_commit} -- ./)"
   if [ -z "${new_changes}" ]; then
     # We have no changes since the last time we saved.
     return 0
