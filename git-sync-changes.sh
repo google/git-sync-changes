@@ -183,28 +183,41 @@ save_changes() {
     fi
   fi
 
-  if [ -z "${local_commit}" ] && [ -z "$(git status --porcelain=1)" ]; then
-    # We have neither local modifications nor previously saved changes
-    return 0
-  fi
-  if [ -z "${local_commit}" ]; then
-    # We do not have previously saved changes, so just take a stash
-    # and save it.
-    changes_stash=$(git stash create "Save local changes")
-    git update-ref "${local_ref}" "${changes_stash}" 2>/dev/null >&2
-    return 0
-  fi
-
-  new_changes="$(git diff ${local_commit} -- ./)"
-  if [ -z "${new_changes}" ]; then
+  if [ -n "${local_commit}" ] && [ -z "$(git diff ${local_commit} -- ./)" ]; then
     # We have no changes since the last time we saved.
     return 0
   fi
 
-  changes_stash=$(git stash create "Save local changes")
-  changes_tree=$(git cat-file -p "${changes_stash}" | head -n 1 | cut -d ' ' -f 2)
-  changes_commit=$(git commit-tree -p "$(current_head)" -p "${local_commit}" -m "Save local changes" "${changes_tree}")
+  current_changes="$(git diff ${branch} -- ./)"
+  if [ -z "${local_commit}" ] && [ -z "${current_changes}" ]; then
+    # We have neither local modifications nor previously saved changes
+    return 0
+  fi
+  if [ -z "${current_changes}" ]; then
+    # We undid previous changes, so we need to create a commit to record that
+    changes_tree=$(git cat-file -p "${branch}" | head -n 1 | cut -d ' ' -f 2)
+    changes_commit=$(git commit-tree -p "${local_commit}" -m "Save local changes" "${changes_tree}")
+    git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
+    return 0
+  fi
+
+  # Create a temporary directory in which to create the changes commit
+  maindir=$(pwd)
+  tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
+  git worktree add "${tempdir}" 2>/dev/null >&2
+  cd "${tempdir}"
+  echo "${current_changes}" | git apply -- 2>/dev/null >&2
+  git commit -a -m "Save local changes" 2>/dev/null >&2
+  tempbranch="$(current_branch)"
+  changes_tree=$(git cat-file -p "${tempbranch}" | head -n 1 | cut -d ' ' -f 2)
+  changes_commit=$(git commit-tree -p "${local_commit}" -m "Save local changes" "${changes_tree}")
   git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
+
+  # Cleanup post merge
+  cd "${maindir}"
+  rm -rf "${tempdir}"
+  git update-ref -d "${tempbranch}"
+  git worktree prune
 }
 
 save_changes
