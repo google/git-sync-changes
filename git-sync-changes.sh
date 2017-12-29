@@ -76,7 +76,7 @@ fetch_remote_changes() {
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
 
   if [ -z "${remote_commit}" ]; then
-    # There is nothing to sync
+    # There are no remote changes to pull down.
     return 0
   fi
 
@@ -94,7 +94,7 @@ fetch_remote_changes() {
     if [ -n "${diff}" ]; then
       echo "${diff}" | git apply --reverse --
     fi
-    return 0
+    return 1
   fi
 
   if [ "${local_commit}" == "${remote_commit}" ]; then
@@ -122,20 +122,22 @@ fetch_remote_changes() {
   if [ -n "${local_commit}" ]; then
     git merge --ff "${local_ref}" 2>/dev/null >&2
   fi
-  git merge -s recursive -X ours "${remote_ref}" 2>/dev/null >&2
+  git merge --ff -s recursive -X ours "${remote_ref}" 2>/dev/null >&2
   git commit -a -m "Merge remote changes" 2>/dev/null >&2
   tempbranch="$(current_branch)"
   git update-ref "${local_ref}" "${tempbranch}" 2>/dev/null >&2
-
-  # Copy any remote changes to our working dir
-  find -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'mkdir' '-p' "${maindir}/{}" ';'
-  find -not -type d -and -not -path "./.git/*" -and -not -name '.git' -exec 'cp' '{}' "${maindir}/"'{}' ';'
 
   # Cleanup post merge
   cd "${maindir}"
   rm -rf "${tempdir}"
   git update-ref -d "${tempbranch}"
   git worktree prune
+
+  # Copy any remote changes to our working dir
+  diff="$(git diff ${local_ref})"
+  if [ -n "${diff}" ]; then
+    echo "${diff}" | git apply --reverse --
+  fi
   return 0
 }
 
@@ -144,11 +146,11 @@ push_local_changes() {
   remote_ref="$(remote_sync_ref)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
 
-  if [ -z "$(git diff ${local_ref} ${branch})" ] && [ -z "$(git diff ${remote_commit} ${branch})" ]; then
-    # We have no changes against the branch, either locally or remotely.
-    #
-    # Clean up by reseting the change history.
-    git update-ref "${local_ref}" "${branch}" 2>/dev/null >&2
+  if [ -z "$(git show-ref ${local_ref})" ]; then
+    # We have reset our history locally and not retrieved any up-to-date history from
+    # the remote, so rest the change history on the remote
+    git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" --delete "${local_ref}" 2>/dev/null >&2
+    return 0
   fi
 
   git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" "${local_ref}:${local_ref}" 2>/dev/null >&2 || return 0
@@ -163,9 +165,10 @@ push_local_changes() {
 #
 # This method enforces two constraints; after the method returns:
 # 1. The contents of the local client's files (other than ignored files)
-#    matches the tree of the commit stored at refs/sync/${user}/${branch}
-# 2. The history of the commit stored at refs/sync/${user}/${branch}
-#    (if it exists) includes every change that was saved since ${branch}
+#    matches the tree of the commit stored at refs/sync/${user}/${branch},
+#    if it exists.
+# 2. The history of the commit stored at refs/sync/${user}/${branch},
+#    if it exists, includes every change that was saved since ${branch}
 #    was changed to its current value.
 save_changes() {
   local_ref="$(local_sync_ref)"
