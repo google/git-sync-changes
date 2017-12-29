@@ -201,6 +201,9 @@ save_changes() {
     return 0
   fi
 
+  if [ -z "${local_commit}" ]; then
+    local_commit="${branch}"
+  fi
   # Create a temporary directory in which to create the changes commit
   maindir=$(pwd)
   tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
