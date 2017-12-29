@@ -71,7 +71,7 @@ fetch_remote_changes() {
   local_ref="$(local_sync_ref)"
   remote_ref="$(remote_sync_ref)"
 
-  git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || return 0
+  git fetch "${remote}" "+${local_ref}:${remote_ref}" 2>/dev/null >&2 || git update-ref -d "${remote_ref}"
   local_commit="$(git show-ref ${local_ref} | cut -d ' ' -f 1)"
   remote_commit="$(git show-ref ${remote_ref} | cut -d ' ' -f 1)"
 
