@@ -90,9 +90,9 @@ fetch_remote_changes() {
   if [ -z "${local_commit}" ]; then
     # We have no local modifications, so copy the remote ones as-is
     git update-ref "${local_ref}" "${remote_commit}" 2>/dev/null >&2
-    diff="$(git diff ${branch}..${remote_commit})"
+    diff="$(git diff ${remote_commit} -- ./)"
     if [ -n "${diff}" ]; then
-      echo "${diff}" | git apply --
+      echo "${diff}" | git apply --reverse --
     fi
     return 1
   fi
