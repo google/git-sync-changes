@@ -183,8 +183,7 @@ save_changes() {
     fi
   fi
 
-  local_diff="$(git diff ${branch} -- ./)"
-  if [ -z "${local_commit}" ] && [ -z "${local_diff}" ]; then
+  if [ -z "${local_commit}" ] && [ -z "$(git status --porcelain=1)" ]; then
     # We have neither local modifications nor previously saved changes
     return 0
   fi
