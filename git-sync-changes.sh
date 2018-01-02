@@ -52,6 +52,35 @@ read_remote_branch() {
   git ls-remote --heads ${remote} ${branch} | cut -d $'\t' -f 1
 }
 
+# Make the local file system match the file tree in the commit at refs/sync/${user}/${branch}.
+#
+# This is the logical inverse of `save_changes`
+replay_changes() {
+  maindir=$(pwd)
+  tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
+  git worktree add --no-checkout "${tempdir}" 2>/dev/null >&2
+  cd "${tempdir}"
+  tempbranch="$(current_branch)"
+
+  git checkout "$(local_sync_ref)" 2>/dev/null >&2
+  for dir in `find ./ -not -path './.git/*' -and -not -name '.git' -and -type d`; do
+    mkdir -p "${maindir}/${dir}"
+  done
+  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
+    cp "${tempdir}/${file}" "${maindir}/${file}"
+  done
+
+  cd "${maindir}"
+  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
+    if [ ! -e "${tempdir}/${file}" ] && [ -z "$(git check-ignore ${file})" ]; then
+      rm "${file}"
+    fi
+  done
+  rm -rf "${tempdir}"  
+  git update-ref -d "${tempbranch}" 2>/dev/null >&2
+  git worktree prune 2>/dev/null >&2
+}
+
 # Merge saved changes from the remote to our local changes.
 #
 # This method enforces the following constraints; after the method returns.
@@ -90,15 +119,16 @@ fetch_remote_changes() {
   if [ -z "${local_commit}" ]; then
     # We have no local modifications, so copy the remote ones as-is
     git update-ref "${local_ref}" "${remote_commit}" 2>/dev/null >&2
-    diff="$(git diff ${remote_commit} -- ./)"
+    diff="$(git diff ${branch}..${remote_commit})"
     if [ -n "${diff}" ]; then
-      echo "${diff}" | git apply --reverse --
+      echo "${diff}" | git apply --
     fi
     return 1
   fi
 
   if [ "${local_commit}" == "${remote_commit}" ]; then
     # Everything is already in sync.
+    replay_changes
     return 1
   fi
 
@@ -120,9 +150,10 @@ fetch_remote_changes() {
   # Perform the merge, favoring our changes in the case of conflicts, and
   # update the local ref.
   if [ -n "${local_commit}" ]; then
-    git merge --ff "${local_ref}" 2>/dev/null >&2
+    git merge --ff -s recursive -X theirs "${local_ref}" 2>/dev/null >&2
   fi
   git merge --ff -s recursive -X ours "${remote_ref}" 2>/dev/null >&2
+  git add ./
   git commit -a -m "Merge remote changes" 2>/dev/null >&2
   tempbranch="$(current_branch)"
   git update-ref "${local_ref}" "${tempbranch}" 2>/dev/null >&2
@@ -134,10 +165,7 @@ fetch_remote_changes() {
   git worktree prune
 
   # Copy any remote changes to our working dir
-  diff="$(git diff ${local_ref} -- ./)"
-  if [ -n "${diff}" ]; then
-    echo "${diff}" | git apply --reverse --
-  fi
+  replay_changes
   return 0
 }
 
@@ -148,7 +176,7 @@ push_local_changes() {
 
   if [ -z "$(git show-ref ${local_ref})" ]; then
     # We have reset our history locally and not retrieved any up-to-date history from
-    # the remote, so rest the change history on the remote
+    # the remote, so reset the change history on the remote
     git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" --delete "${local_ref}" 2>/dev/null >&2
     return 0
   fi
@@ -183,12 +211,7 @@ save_changes() {
     fi
   fi
 
-  if [ -n "${local_commit}" ] && [ -z "$(git diff ${local_commit} -- ./)" ]; then
-    # We have no changes since the last time we saved.
-    return 0
-  fi
-
-  current_changes="$(git diff ${branch} -- ./)"
+  current_changes="$(git status --porcelain=1)"
   if [ -z "${local_commit}" ] && [ -z "${current_changes}" ]; then
     # We have neither local modifications nor previously saved changes
     return 0
@@ -204,17 +227,28 @@ save_changes() {
   if [ -z "${local_commit}" ]; then
     local_commit="${branch}"
   fi
+
   # Create a temporary directory in which to create the changes commit
   maindir=$(pwd)
   tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
-  git worktree add "${tempdir}" 2>/dev/null >&2
+  git worktree add --no-checkout "${tempdir}" 2>/dev/null >&2
+  for dir in `find ./ -not -path './.git/*' -and -not -name '.git' -and -type d`; do
+    mkdir -p "${tempdir}/${dir}"
+  done
+  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
+    cp "${file}" "${tempdir}/${file}"
+  done
   cd "${tempdir}"
-  echo "${current_changes}" | git apply -- 2>/dev/null >&2
-  git commit -a -m "Save local changes" 2>/dev/null >&2
   tempbranch="$(current_branch)"
-  changes_tree=$(git cat-file -p "${tempbranch}" | head -n 1 | cut -d ' ' -f 2)
-  changes_commit=$(git commit-tree -p "${local_commit}" -m "Save local changes" "${changes_tree}")
-  git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
+  git add ./
+
+  if [ -n "$(git diff ${local_commit} -- ./)" ]; then
+    # We have changes since the last time we saved.
+    git commit -a -m "Save local changes" 2>/dev/null >&2
+    changes_tree=$(git cat-file -p "${tempbranch}" | head -n 1 | cut -d ' ' -f 2)
+    changes_commit=$(git commit-tree -p "${local_commit}" -m "Save local changes" "${changes_tree}")
+    git update-ref "${local_ref}" "${changes_commit}" 2>/dev/null >&2
+  fi
 
   # Cleanup post merge
   cd "${maindir}"
