@@ -19,7 +19,7 @@ test_client_1=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
 test_client_2=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
 trap "{ cd ${maindir}; rm -rf ${test_remote}; rm -rf ${test_client_1}; rm -rf ${test_client_2}; }" EXIT
 
-sync_cmd="${maindir}/git-sync-changes.sh"
+sync_cmd="${maindir}/git-sync-changes"
 
 setup_repo() {
   echo "Setting up remote repository..."
