@@ -97,7 +97,46 @@ test_rollback_changes() {
   fi
 }
 
+test_sync_then_commit() {
+  echo "Testing syncing a file modification..."
+  cd "${test_client_1}"
+  readme_txt="Additional text added to the README"
+  echo "${readme_txt}" >> README.md
+  second_readme_txt="Additional README"
+  echo "${second_readme_txt}" >> README_2.md
+  ${sync_cmd}
+
+  cd "${test_client_2}"
+  ${sync_cmd}
+  if [ "$(cat README_2.md)" != "${second_readme_txt}" ]; then
+    return 1
+  elif [ "$(tail -n 1 README.md)" != "${readme_txt}" ]; then
+    return 1
+  fi
+
+  cd "${test_client_1}"
+  git add ./
+  git commit -a -m 'Second commit' 2>/dev/null >&2
+  ${sync_cmd}
+  log=`git log`
+  status=`git status`
+
+  cd "${test_client_2}"
+  ${sync_cmd}
+
+  if [ "$(git log)" != "${log}" ]; then
+    echo $'\t'"Log mismatch: '$(git log)' vs '${log}'" >&2
+    return 1
+  elif [ "$(git status)" != "${status}" ]; then
+    echo $'\t'"Status mismatch: '$(git status)' vs '${status}'" >&2
+    return 1
+  else
+    echo $'\tfile sync and then commit test passed'
+  fi
+}
+
 setup_repo
 test_modified_file || exit 1
 test_new_file || exit 1
 test_rollback_changes || exit 1
+test_sync_then_commit || exit 1
