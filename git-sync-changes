@@ -129,8 +129,15 @@ save_current_commit() {
 
 push_current_commit() {
   remote_commit="$(git show-ref $(remote_commits_ref) | cut -d ' ' -f 1)"
-  git push "${remote}" --force-with-lease="$(local_commits_ref):${remote_commit}" "$(local_commits_ref):$(local_commits_ref)" 2>/dev/null >&2
-  if [ "$?" != "0" ]; then
+  result="1"
+  if [ -n "${remote_commit}" ]; then
+    git push "${remote}" --force-with-lease="$(local_commits_ref):${remote_commit}" "$(local_commits_ref):$(local_commits_ref)" 2>/dev/null >&2
+    result="$?"
+  else
+    git push "${remote}" "$(local_commits_ref):$(local_commits_ref)" 2>/dev/null >&2
+    result="$?"
+  fi
+  if [ "${result}" != "0" ]; then
     echo "Failed to push the committed local client state to the remote" >&2
     return 1
   fi
