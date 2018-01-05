@@ -154,19 +154,11 @@ replay_changes() {
   tempbranch="$(current_branch)"
 
   git checkout "$(local_changes_ref)" 2>/dev/null >&2
-  for dir in `find ./ -not -path './.git/*' -and -not -name '.git' -and -type d`; do
-    mkdir -p "${maindir}/${dir}"
-  done
-  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
-    cp "${tempdir}/${file}" "${maindir}/${file}"
-  done
+  find ./ -not -path './.git/*' -and -not -name '.git' -and -type d -exec  mkdir -p "${maindir}/{}" \;
+  find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d -exec cp "${tempdir}/{}" "${maindir}/{}" \;
 
   cd "${maindir}"
-  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
-    if [ ! -e "${tempdir}/${file}" ] && [ -z "$(git check-ignore ${file})" ]; then
-      rm "${file}"
-    fi
-  done
+  find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d -exec bash -c "if [ ! -e '${tempdir}/{}' ] && [ -z \"$(git check-ignore {})\" ]; then rm '{}'; fi" \;
   rm -rf "${tempdir}"  
   git update-ref -d "${tempbranch}" 2>/dev/null >&2
   git worktree prune 2>/dev/null >&2
@@ -260,6 +252,7 @@ push_local_changes() {
     # We have reset our history locally and not retrieved any up-to-date history from
     # the remote, so reset the change history on the remote
     git push "${remote}" --force-with-lease="${local_ref}:${remote_commit}" --delete "${local_ref}" 2>/dev/null >&2
+    git update-ref -d "${remote_ref}"
     return 0
   fi
 
@@ -313,12 +306,8 @@ save_changes() {
   maindir=$(pwd)
   tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'sync-changes')
   git worktree add --no-checkout "${tempdir}" 2>/dev/null >&2
-  for dir in `find ./ -not -path './.git/*' -and -not -name '.git' -and -type d`; do
-    mkdir -p "${tempdir}/${dir}"
-  done
-  for file in `find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d`; do
-    cp "${file}" "${tempdir}/${file}"
-  done
+  find ./ -not -path './.git/*' -and -not -name '.git' -and -type d -exec mkdir -p "${tempdir}/{}" \;
+  find ./ -not -path './.git/*' -and -not -name '.git' -and -not -type d -exec cp "{}" "${tempdir}/{}" \;
   cd "${tempdir}"
   tempbranch="$(current_branch)"
   git add ./

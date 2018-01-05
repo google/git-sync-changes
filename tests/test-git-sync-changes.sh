@@ -74,10 +74,10 @@ test_modified_file() {
   cd "${test_client_1}"
   readme_txt="Additional text added to the README"
   echo "${readme_txt}" >> README.md
-  ${sync_cmd}
+  ${sync_cmd} || return 1
 
   cd "${test_client_2}"
-  ${sync_cmd}
+  ${sync_cmd} || return 1
   if [ "$(tail -n 1 README.md)" != "${readme_txt}" ]; then
     return 1
   else
@@ -90,10 +90,10 @@ test_new_file() {
   cd "${test_client_1}"
   second_readme_txt="Additional README"
   echo "${second_readme_txt}" >> README_2.md
-  ${sync_cmd}
+  ${sync_cmd} || return 1
 
   cd "${test_client_2}"
-  ${sync_cmd}
+  ${sync_cmd} || return 1
   if [ "$(cat README_2.md)" != "${second_readme_txt}" ]; then
     return 1
   else
@@ -109,10 +109,10 @@ test_rollback_changes() {
   for file in `git status --porcelain=1 | grep '??' | cut -d ' ' -f 2`; do
    rm "${file}"
   done
-  ${sync_cmd}
+  ${sync_cmd} || return 1
 
   cd "${test_client_2}"
-  ${sync_cmd}
+  ${sync_cmd} || return 1
   if [ -n "$(git status --porcelain=1)" ]; then
     git status
     ls -al
@@ -129,10 +129,10 @@ test_sync_then_commit() {
   echo "${readme_txt}" >> README.md
   second_readme_txt="Additional README"
   echo "${second_readme_txt}" >> README_2.md
-  ${sync_cmd}
+  ${sync_cmd} || return 1
 
   cd "${test_client_2}"
-  ${sync_cmd}
+  ${sync_cmd} || return 1
   if [ "$(cat README_2.md)" != "${second_readme_txt}" ]; then
     return 1
   elif [ "$(tail -n 1 README.md)" != "${readme_txt}" ]; then
@@ -142,12 +142,12 @@ test_sync_then_commit() {
   cd "${test_client_1}"
   git add ./
   git commit -a -m 'Second commit' 2>/dev/null >&2
-  ${sync_cmd}
+  ${sync_cmd} || return 1
   log=`git log`
   status=`git status`
 
   cd "${test_client_2}"
-  ${sync_cmd}
+  ${sync_cmd} || return 1
 
   if [ "$(git log)" != "${log}" ]; then
     echo $'\t'"Log mismatch: '$(git log)' vs '${log}'" >&2
@@ -160,9 +160,49 @@ test_sync_then_commit() {
   fi
 }
 
+test_filename_with_space() {
+  echo "Testing syncing a file with space in its name"
+  cd "${test_client_1}"
+  third_readme_txt="Additional README with space in its name"
+  echo "${third_readme_txt}" >> README\ 3.md
+  ${sync_cmd} || return 1
+
+  cd "${test_client_2}"
+  ${sync_cmd} || return 1
+  if [ "$(cat README\ 3.md)" != "${third_readme_txt}" ]; then
+    return 1
+  fi
+
+  cd "${test_client_1}"
+  git add ./
+  git commit -a -m 'Third commit' 2>/dev/null >&2
+  ${sync_cmd} || return 1
+  log=`git log`
+  status=`git status`
+
+  cd "${test_client_2}"
+  ${sync_cmd} || return 1
+
+  if [ "$(git log)" != "${log}" ]; then
+    echo $'\t'"Log mismatch: '$(git log)' vs '${log}'" >&2
+    return 1
+  elif [ "$(git status)" != "${status}" ]; then
+    echo $'\t'"Status mismatch: '$(git status)' vs '${status}'" >&2
+    return 1
+  else
+    echo $'\tfilename with space sync test passed'
+  fi
+}
+
+exit_with_message() {
+  echo $'\t'"$1"
+  exit 1
+}
+
 setup_repo
-test_initial_sync || exit 1
-test_modified_file || exit 1
-test_new_file || exit 1
-test_rollback_changes || exit 1
-test_sync_then_commit || exit 1
+test_initial_sync || exit_with_message "testing the initial sync failed"
+test_modified_file || exit_with_message "testing a modified file failed"
+test_new_file || exit_with_message "testing a new file failed"
+test_rollback_changes || exit_with_message "testing a rollback failed"
+test_sync_then_commit || exit_with_message "testing a sync and commit failed"
+test_filename_with_space || exit_with_message "testing a sync with a space in a file name failed"
