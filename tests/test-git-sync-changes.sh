@@ -44,6 +44,31 @@ setup_repo() {
   git checkout -t "origin/master" 2>/dev/null >&2
 }
 
+test_initial_sync() {
+  echo "Testing syncing a new repository..."
+  cd "${test_client_1}"
+  if [ "$(git ls-remote origin | grep 'refs/synced_client')" != "" ]; then
+    echo $'\tinitial sync test run against an already initialized remote'
+    return 1
+  fi
+  ${sync_cmd} || return 1
+
+  cd "${test_client_2}"
+  if [ "$(git ls-remote origin | grep 'refs/synced_client')" == "" ]; then
+    echo $'\tinitial sync test failed to initialize the remote'
+    return 1
+  fi
+  ${sync_cmd} || return 1
+
+  user_email="$(git config --get user.email)"
+  if [ "$(git show-ref refs/synced_remote_client/origin/${user_email}/refs/heads/master)" == "" ]; then
+    echo $'\tinitial sync test failed to sync the remote commit'
+    return 1
+  else
+    echo $'\tinitial sync test passed'
+  fi
+}
+
 test_modified_file() {
   echo "Testing syncing a file modification..."
   cd "${test_client_1}"
@@ -136,6 +161,7 @@ test_sync_then_commit() {
 }
 
 setup_repo
+test_initial_sync || exit 1
 test_modified_file || exit 1
 test_new_file || exit 1
 test_rollback_changes || exit 1
