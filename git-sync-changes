@@ -68,7 +68,7 @@ pull_remote_commit() {
 
   local_commit="$(git show-ref $(local_commits_ref) | cut -d ' ' -f 1)"
   if [ -z "${local_commit}" ]; then
-    if [ -n "$(git status --porcelain=1)" ]; then
+    if [ -n "$(git status --porcelain)" ]; then
       # There are local changes that we do not know how to sync
       echo "Changes to the local client conflict with the remote client" >&2
       return 1
@@ -90,11 +90,11 @@ pull_remote_commit() {
     git update-ref "$(local_commits_ref)" "$(remote_commits_ref)" 2>/dev/null >&2
     git update-ref "$(current_branch)" "${remote_commit}^1" 2>/dev/null >&2
     git checkout HEAD 2>/dev/null >&2
-    if [ -n "$(git status --porcelain=1)" ]; then
+    if [ -n "$(git status --porcelain)" ]; then
       # There are obsolete local changes that we do need to clear out
       git reset HEAD ./ 2>/dev/null >&2
       git checkout -- ./ 2>/dev/null >&2
-      for file in `git status --porcelain=1 | grep '??' | cut -d ' ' -f 2`; do
+      for file in `git status --porcelain | grep '??' | cut -d ' ' -f 2`; do
         rm "${file}"
       done
     fi
@@ -292,7 +292,7 @@ save_changes() {
     fi
   fi
 
-  current_changes="$(git status --porcelain=1)"
+  current_changes="$(git status --porcelain)"
   if [ -z "${saved_changes_commit}" ] && [ -z "${current_changes}" ]; then
     # We have neither local modifications nor previously saved changes
     return 0
