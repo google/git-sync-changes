@@ -32,7 +32,6 @@ check_remote() {
 
 remote="${1:-origin}"
 client_name="${2:-$(current_user)/$(current_branch)}"
-branch="${3:-$(current_branch)}"
 
 if [ -z "$(current_head)" ]; then
   echo "Empty repository; nothing to do" >&2
