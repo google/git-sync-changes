@@ -197,11 +197,8 @@ merge_remote_changes() {
       echo "${diff}" | git apply --
     fi
     return 1
-  fi
-
-  if [ "${local_commit}" == "${remote_commit}" ]; then
+  elif [ "${local_commit}" == "${remote_commit}" ]; then
     # Everything is already in sync.
-    replay_changes
     return 1
   fi
 
