@@ -25,19 +25,19 @@ current_user() {
   echo "${user_email:-${USER}}"
 }
 
-check_remote() {
-  git remote get-url origin 2>/dev/null >&2 && return 0
-  echo "Remote ${remote} does not exist... nothing to sync" >&2 ; return 1
-}
-
 remote="${1:-origin}"
 client_name="${2:-$(current_user)/$(current_branch)}"
+
+check_remote() {
+  git remote get-url "${remote}" 2>/dev/null >&2 && return 0
+  echo "Remote ${remote} does not exist... nothing to sync" >&2 ; return 1
+}
 
 if [ -z "$(current_head)" ]; then
   echo "Empty repository; nothing to do" >&2
   exit 0
 fi
-check_remote "${remote}" || exit 0
+check_remote || exit 0
 
 local_commits_ref() {
   echo "refs/synced_client/${client_name}"
