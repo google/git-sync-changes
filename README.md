@@ -42,6 +42,6 @@ like:
 ```sh
 ( while [ 1 ]; do
     git sync-changes
-	sleep 30
+    sleep 30
   done)
 ```
