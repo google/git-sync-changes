@@ -8,6 +8,10 @@ The result is that anyone with push permissions on the repository
 can sync their local worktree with that shared worktree, and then
 view and edit pending changes prior to committing them.
 
+## Disclaimer
+
+This is not an official Google product.
+
 ## Installation
 
 To install, simply copy the `git-sync-changes` script to somewhere
